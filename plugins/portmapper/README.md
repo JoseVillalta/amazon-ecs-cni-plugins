@@ -90,22 +90,65 @@ A sample standalone config list for Kubernetes (with the file extension .conflis
 
 ## Running the Plugin
 
+### Using CNI Environment Variables
+
 Please ensure that the environment variables needed for running any CNI plugins are appropriately configured:
 * `CNI_COMMAND`: Command to execute eg: ADD.
 * `CNI_PATH`: Plugin binary path eg: `pwd`/bin.
 * `CNI_IFNAME`: Interface name inside the container
 
-### Add:
+#### Add:
 ```
 export CNI_COMMAND=ADD && cat mynet.conf | ../bin/ecs-portmapper
 ```
 
-### Del:
+#### Del:
 ```
 export CNI_COMMAND=DEL && cat mynet.conf | ../bin/ecs-portmapper
 ```
 
 `mynet.conf` is the configuration file for the plugin, it's the same as described in the overview above.
+
+### Using cnitool (Recommended for Testing)
+
+For easier testing and debugging, you can use `cnitool` to run the plugin:
+
+#### Prerequisites
+```bash
+# Install cnitool
+go install github.com/containernetworking/cni/cnitool@latest
+
+# Set environment variables
+export CNI_PATH=/opt/cni/bin/
+export NETCONFPATH=/opt/cni/netconfs
+```
+
+#### Set Port Mappings
+```bash
+export CAP_ARGS='{
+    "portMappings": [
+        {
+            "hostPort":      9090,
+            "containerPort": 80,
+            "protocol":      "tcp"
+        }
+    ]
+}'
+```
+
+#### Execute Plugin
+```bash
+# Add port mapping
+cnitool add ecs-portmapper /run/netns/cake3
+
+# Remove port mapping
+cnitool del ecs-portmapper /run/netns/cake3
+
+# Verify iptables rules
+iptables -t nat -L
+```
+
+**Note**: The plugin requires a `prevResult` from a previous CNI plugin execution (like ecs-bridge).
 
 ## Rule Structure
 
