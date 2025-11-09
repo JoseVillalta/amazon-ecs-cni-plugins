@@ -55,6 +55,22 @@ type creator struct {
 
 var creators []*creator
 
+func init() {
+	// Initialize creators for different CNI versions
+	creators = []*creator{
+		{
+			versions: []string{"0.3.0", "0.3.1", "0.4.0", "1.0.0"},
+			createFn: func(data []byte) (t.Result, error) {
+				var result current.Result
+				if err := json.Unmarshal(data, &result); err != nil {
+					return nil, err
+				}
+				return &result, nil
+			},
+		},
+	}
+}
+
 func findCreator(version string) *creator {
 	for _, c := range creators {
 		for _, v := range c.versions {
