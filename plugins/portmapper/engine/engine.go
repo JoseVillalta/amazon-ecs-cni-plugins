@@ -16,7 +16,6 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 
 	// TODO clean this up
 	"github.com/containernetworking/cni/pkg/skel"
@@ -70,7 +69,8 @@ func findCreator(version string) *creator {
 // Engine represents the execution engine for the portmapper plugin. It defines all the
 // operations performed by the plugin
 type Engine interface {
-	ForwardPorts(config *PortMapConf, containerNet net.IPNet) error
+	ForwardPorts() error
+	GetConfig() *PortMapConf
 }
 
 type engine struct {
@@ -85,27 +85,27 @@ func New(args *skel.CmdArgs) (Engine, error) {
 	return e, err
 }
 
-func (e *engine) ForwardPorts(config *PortMapConf, containerNet net.IPNet) error {
-	if config.PrevResult == nil {
+func (e *engine) ForwardPorts() error {
+	if e.config.PrevResult == nil {
 		return fmt.Errorf("must be called as chained plugin")
 	}
 
-	if len(config.RuntimeConfig.PortMaps) == 0 {
+	if len(e.config.RuntimeConfig.PortMaps) == 0 {
 		return nil // No port mappings to configure
 	}
 
-	if config.ContIPv4.IP != nil {
-		if err := config.Mapper.ForwardPorts(config, config.ContIPv4); err != nil {
+	if e.config.ContIPv4.IP != nil {
+		if err := e.config.Mapper.ForwardPorts(&e.config, e.config.ContIPv4); err != nil {
 			return err
 		}
 		// Delete conntrack entries for UDP to avoid conntrack blackholing traffic
-		if err := deletePortmapStaleConnections(config.RuntimeConfig.PortMaps, 2); err != nil { // AF_INET = 2
+		if err := deletePortmapStaleConnections(e.config.RuntimeConfig.PortMaps, 2); err != nil { // AF_INET = 2
 			// Log error but don't fail
 		}
 
-		if *config.SNAT {
+		if *e.config.SNAT {
 			// Set the route_localnet bit on the host interface
-			hostIfName := getRoutableHostIF(config.ContIPv4.IP)
+			hostIfName := getRoutableHostIF(e.config.ContIPv4.IP)
 			if hostIfName != "" {
 				if err := enableLocalnetRouting(hostIfName); err != nil {
 					return fmt.Errorf("unable to enable route_localnet: %v", err)
@@ -114,17 +114,21 @@ func (e *engine) ForwardPorts(config *PortMapConf, containerNet net.IPNet) error
 		}
 	}
 
-	if config.ContIPv6.IP != nil {
-		if err := config.Mapper.ForwardPorts(config, config.ContIPv6); err != nil {
+	if e.config.ContIPv6.IP != nil {
+		if err := e.config.Mapper.ForwardPorts(&e.config, e.config.ContIPv6); err != nil {
 			return err
 		}
 		// Delete conntrack entries for UDP to avoid conntrack blackholing traffic
-		if err := deletePortmapStaleConnections(config.RuntimeConfig.PortMaps, 10); err != nil { // AF_INET6 = 10
+		if err := deletePortmapStaleConnections(e.config.RuntimeConfig.PortMaps, 10); err != nil { // AF_INET6 = 10
 			// Log error but don't fail
 		}
 	}
 
 	return nil
+}
+
+func (e *engine) GetConfig() *PortMapConf {
+	return &e.config
 }
 
 // parseConfig parses the supplied configuration (and prevResult) from stdin.

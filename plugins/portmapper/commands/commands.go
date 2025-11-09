@@ -14,10 +14,13 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/aws/amazon-ecs-cni-plugins/plugins/portmapper/engine"
 
 	log "github.com/cihub/seelog"
 	"github.com/containernetworking/cni/pkg/skel"
+	"github.com/containernetworking/cni/pkg/types"
 )
 
 // Add invokes the command to add port mappings
@@ -44,29 +47,22 @@ func Del(args *skel.CmdArgs) error {
 	return del(args, eng)
 }
 
-func add(args *skel.CmdArgs, engine engine.Engine) error {
-	//engine.ForwardPorts(context.AfterFunc())
-	/*netConf, _, err := engine.ParseConfig(args.StdinData, args.IfName)
-	if err != nil {
-		return fmt.Errorf("failed to parse config: %v", err)
-	}
-
-	if netConf.PrevResult == nil {
+func add(args *skel.CmdArgs, eng engine.Engine) error {
+	config := eng.GetConfig()
+	
+	if config.PrevResult == nil {
 		return fmt.Errorf("must be called as chained plugin")
 	}
 
-	if len(netConf.RuntimeConfig.PortMaps) == 0 {
-		return cnitypes.PrintResult(netConf.PrevResult, netConf.CNIVersion)
+	if len(config.RuntimeConfig.PortMaps) == 0 {
+		return types.PrintResult(config.PrevResult, config.CNIVersion)
 	}
 
-	netConf.ContainerID = args.ContainerID
+	if err := eng.ForwardPorts(); err != nil {
+		return err
+	}
 
-	log.Infof("Adding port mappings for container %s", args.ContainerID)
-
-	// Pass through the previous result
-	return cnitypes.PrintResult(netConf.PrevResult, netConf.CNIVersion)
-	*/
-	return nil
+	return types.PrintResult(config.PrevResult, config.CNIVersion)
 }
 
 func del(args *skel.CmdArgs, engine engine.Engine) error {
@@ -86,3 +82,5 @@ func del(args *skel.CmdArgs, engine engine.Engine) error {
 	*/
 	return nil
 }
+
+
