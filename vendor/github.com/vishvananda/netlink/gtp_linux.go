@@ -1,12 +1,14 @@
 package netlink
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"syscall"
 
 	"github.com/vishvananda/netlink/nl"
+	"golang.org/x/sys/unix"
 )
 
 type PDP struct {
@@ -73,6 +75,8 @@ func parsePDP(msgs [][]byte) ([]*PDP, error) {
 	return pdps, nil
 }
 
+// If the returned error is [ErrDumpInterrupted], results may be inconsistent
+// or incomplete.
 func (h *Handle) GTPPDPList() ([]*PDP, error) {
 	f, err := h.GenlFamilyGet(nl.GENL_GTP_NAME)
 	if err != nil {
@@ -82,21 +86,27 @@ func (h *Handle) GTPPDPList() ([]*PDP, error) {
 		Command: nl.GENL_GTP_CMD_GETPDP,
 		Version: nl.GENL_GTP_VERSION,
 	}
-	req := h.newNetlinkRequest(int(f.ID), syscall.NLM_F_DUMP)
+	req := h.newNetlinkRequest(int(f.ID), unix.NLM_F_DUMP)
 	req.AddData(msg)
-	msgs, err := req.Execute(syscall.NETLINK_GENERIC, 0)
+	msgs, executeErr := req.Execute(unix.NETLINK_GENERIC, 0)
+	if executeErr != nil && !errors.Is(err, ErrDumpInterrupted) {
+		return nil, executeErr
+	}
+	pdps, err := parsePDP(msgs)
 	if err != nil {
 		return nil, err
 	}
-	return parsePDP(msgs)
+	return pdps, executeErr
 }
 
+// If the returned error is [ErrDumpInterrupted], results may be inconsistent
+// or incomplete.
 func GTPPDPList() ([]*PDP, error) {
 	return pkgHandle.GTPPDPList()
 }
 
 func gtpPDPGet(req *nl.NetlinkRequest) (*PDP, error) {
-	msgs, err := req.Execute(syscall.NETLINK_GENERIC, 0)
+	msgs, err := req.Execute(unix.NETLINK_GENERIC, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +192,7 @@ func (h *Handle) GTPPDPAdd(link Link, pdp *PDP) error {
 		Command: nl.GENL_GTP_CMD_NEWPDP,
 		Version: nl.GENL_GTP_VERSION,
 	}
-	req := h.newNetlinkRequest(int(f.ID), syscall.NLM_F_EXCL|syscall.NLM_F_ACK)
+	req := h.newNetlinkRequest(int(f.ID), unix.NLM_F_EXCL|unix.NLM_F_ACK)
 	req.AddData(msg)
 	req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_VERSION, nl.Uint32Attr(pdp.Version)))
 	req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_LINK, nl.Uint32Attr(uint32(link.Attrs().Index))))
@@ -199,7 +209,7 @@ func (h *Handle) GTPPDPAdd(link Link, pdp *PDP) error {
 	default:
 		return fmt.Errorf("unsupported GTP version: %d", pdp.Version)
 	}
-	_, err = req.Execute(syscall.NETLINK_GENERIC, 0)
+	_, err = req.Execute(unix.NETLINK_GENERIC, 0)
 	return err
 }
 
@@ -216,7 +226,7 @@ func (h *Handle) GTPPDPDel(link Link, pdp *PDP) error {
 		Command: nl.GENL_GTP_CMD_DELPDP,
 		Version: nl.GENL_GTP_VERSION,
 	}
-	req := h.newNetlinkRequest(int(f.ID), syscall.NLM_F_EXCL|syscall.NLM_F_ACK)
+	req := h.newNetlinkRequest(int(f.ID), unix.NLM_F_EXCL|unix.NLM_F_ACK)
 	req.AddData(msg)
 	req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_VERSION, nl.Uint32Attr(pdp.Version)))
 	req.AddData(nl.NewRtAttr(nl.GENL_GTP_ATTR_LINK, nl.Uint32Attr(uint32(link.Attrs().Index))))
@@ -229,7 +239,7 @@ func (h *Handle) GTPPDPDel(link Link, pdp *PDP) error {
 	default:
 		return fmt.Errorf("unsupported GTP version: %d", pdp.Version)
 	}
-	_, err = req.Execute(syscall.NETLINK_GENERIC, 0)
+	_, err = req.Execute(unix.NETLINK_GENERIC, 0)
 	return err
 }
 

@@ -1,10 +1,12 @@
 package netlink
 
 import (
+	"errors"
 	"fmt"
 	"syscall"
 
 	"github.com/vishvananda/netlink/nl"
+	"golang.org/x/sys/unix"
 )
 
 type GenlOp struct {
@@ -125,20 +127,28 @@ func parseFamilies(msgs [][]byte) ([]*GenlFamily, error) {
 	return families, nil
 }
 
+// If the returned error is [ErrDumpInterrupted], results may be inconsistent
+// or incomplete.
 func (h *Handle) GenlFamilyList() ([]*GenlFamily, error) {
 	msg := &nl.Genlmsg{
 		Command: nl.GENL_CTRL_CMD_GETFAMILY,
 		Version: nl.GENL_CTRL_VERSION,
 	}
-	req := h.newNetlinkRequest(nl.GENL_ID_CTRL, syscall.NLM_F_DUMP)
+	req := h.newNetlinkRequest(nl.GENL_ID_CTRL, unix.NLM_F_DUMP)
 	req.AddData(msg)
-	msgs, err := req.Execute(syscall.NETLINK_GENERIC, 0)
+	msgs, executeErr := req.Execute(unix.NETLINK_GENERIC, 0)
+	if executeErr != nil && !errors.Is(executeErr, ErrDumpInterrupted) {
+		return nil, executeErr
+	}
+	families, err := parseFamilies(msgs)
 	if err != nil {
 		return nil, err
 	}
-	return parseFamilies(msgs)
+	return families, executeErr
 }
 
+// If the returned error is [ErrDumpInterrupted], results may be inconsistent
+// or incomplete.
 func GenlFamilyList() ([]*GenlFamily, error) {
 	return pkgHandle.GenlFamilyList()
 }
@@ -151,11 +161,14 @@ func (h *Handle) GenlFamilyGet(name string) (*GenlFamily, error) {
 	req := h.newNetlinkRequest(nl.GENL_ID_CTRL, 0)
 	req.AddData(msg)
 	req.AddData(nl.NewRtAttr(nl.GENL_CTRL_ATTR_FAMILY_NAME, nl.ZeroTerminated(name)))
-	msgs, err := req.Execute(syscall.NETLINK_GENERIC, 0)
+	msgs, err := req.Execute(unix.NETLINK_GENERIC, 0)
 	if err != nil {
 		return nil, err
 	}
 	families, err := parseFamilies(msgs)
+	if err != nil {
+		return nil, err
+	}
 	if len(families) != 1 {
 		return nil, fmt.Errorf("invalid response for GENL_CTRL_CMD_GETFAMILY")
 	}
